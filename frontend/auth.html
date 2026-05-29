@@ -1,0 +1,120 @@
+<!-- @format -->
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Snapchat - Zeg het met een snap</title>
+    <link rel="stylesheet" href="./style/auth.css" />
+  </head>
+  <body>
+    <nav>
+      <div class="nav-left">
+        <a href="auth.html">
+          <img class="navbar_logo" src="./logo's/snapchat_logo.svg" alt="Logo" />
+        </a>
+        <div class="search-container">
+          <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="text" id="searchInput" class="search-input" placeholder="Zoeken" />
+        </div>
+      </div>
+      <div class="nav-center">
+        <a href="#" class="nav-item"><div class="icon-box">📱</div><span>Verhalen</span></a>
+        <a href="#" class="nav-item"><div class="icon-box">▶️</div><span>Spotlight</span></a>
+        <a href="#" class="nav-item">
+          <div class="icon-box relative-box">💬<span class="badge-new">NEW</span></div>
+          <span>Chat</span>
+        </a>
+        <a href="#" class="nav-item"><div class="icon-box">✨</div><span>Lenzen</span></a>
+        <a href="#" class="nav-item"><div class="icon-box">👻</div><span>Snapchat+</span></a>
+      </div>
+      <div class="nav-right">
+        <button class="grid-btn">⋮⋮⋮</button>
+        <button class="btn-black">Snapchat-advertenties</button>
+        <button class="btn-black">Downloaden</button>
+      </div>
+    </nav>
+
+    <main class="split-layout">
+      <aside class="sidebar-left">
+        <h2 id="auth-title">Welkom bij Snapchat</h2>
+        <p>Chat, Snap en videobel met je vrienden. Bekijk Verhalen en Spotlight, allemaal op je computer.</p>
+
+        <!-- TABBLADEN -->
+        <div class="auth-tabs">
+          <button class="auth-tab active" id="tab-login" onclick="switchTab('login')">Inloggen</button>
+          <button class="auth-tab" id="tab-register" onclick="switchTab('register')">Registreren</button>
+        </div>
+
+        <!-- FOUT- EN SUCCESBOODSCHAPPEN -->
+        <div class="error-msg" id="error-msg"></div>
+        <div class="success-msg" id="success-msg"></div>
+
+        <!-- INLOGGEN FORMULIER -->
+        <form class="login-form" id="form-login">
+          <div class="form-panel active" id="panel-login">
+            <input type="text" id="login-username" placeholder="Gebruikersnaam of e-mail" required />
+            <input type="password" id="login-password" placeholder="Wachtwoord" required />
+            <button type="submit" class="btn-blue" id="btn-login">Inloggen</button>
+          </div>
+        </form>
+
+        <!-- REGISTREREN FORMULIER -->
+        <form class="login-form" id="form-register" style="display:none;">
+          <div class="form-panel active" id="panel-register">
+            <input type="text" id="reg-username" placeholder="Gebruikersnaam (min. 3 tekens)" required />
+            <input type="email" id="reg-email" placeholder="E-mailadres" required />
+            <input type="password" id="reg-password" placeholder="Wachtwoord (min. 6 tekens)" required />
+            <button type="submit" class="btn-blue" id="btn-register">Account aanmaken</button>
+          </div>
+        </form>
+      </aside>
+
+      <section class="content-right" id="scrollArea">
+        <div class="cards-grid">
+          <div class="info-block">
+            <img src="./foto/zon.jpg" alt="Achtergrond" class="media-bg" />
+            <div class="card-content">
+              <h2>Leef je uit met vrienden en familie.</h2>
+              <button class="card-btn">Zoek je vrienden</button>
+            </div>
+          </div>
+          <div class="info-block">
+            <img src="./foto/filter.jpg" alt="Achtergrond" class="media-bg" />
+            <div class="card-content">
+              <h2>Druk jezelf uit met miljoenen Lenzen.</h2>
+              <button class="card-btn">Nu proberen</button>
+            </div>
+          </div>
+          <div class="info-block">
+            <video src="./foto/spotlight.mp4" class="media-bg" autoplay loop muted playsinline></video>
+            <div class="card-content">
+              <h2>Laat je inspireren en deel je creativiteit.</h2>
+              <button class="card-btn">Spotlight openen</button>
+            </div>
+          </div>
+          <div class="info-block">
+            <img src="./foto/kaart.jpg" alt="Achtergrond" class="media-bg" />
+            <div class="card-content">
+              <h2>Ontdek meer over de wereld op je meest persoonlijke kaart.</h2>
+              <button class="card-btn">Je kaart ontdekken</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="footer-banner">
+        <span class="icon-yellow">👨‍👦</span>
+        Ben je een ouder? Ontdek wat we doen om
+        <a href="#">Snapchatters veilig te houden.</a>
+      </div>
+    </footer>
+
+    <script src="./javascript/auth.js" defer></script>
+  </body>
+</html>

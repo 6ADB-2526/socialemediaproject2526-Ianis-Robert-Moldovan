@@ -1,0 +1,76 @@
+<!-- @format -->
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Snapchat Clone</title>
+    <link rel="stylesheet" href="../style/app/main.css" />
+    <link rel="stylesheet" href="../style/app/sidebar.css" />
+    <link rel="stylesheet" href="../style/app/chat-view.css" />
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  </head>
+  <body>
+    <div class="snap-container">
+      <aside class="sidebar">
+        <header class="sidebar-header">
+          <button class="profile-icon" id="profile-icon" title="Profiel" type="button">P</button>
+          <button class="logo-ghost" id="camera-btn" title="Camera" type="button">Snap</button>
+          <button class="settings-btn" id="settings-btn" title="Instellingen" type="button">S</button>
+          <button class="group-chat" id="group-chat-btn" title="Groep maken" type="button">G</button>
+          <button class="new-chat" id="add-friend-btn" title="Vriend toevoegen" type="button">+</button>
+        </header>
+
+        <div class="stories-container" id="stories-container">
+          <div class="empty-state small">Stories laden...</div>
+        </div>
+
+        <div class="search-container">
+          <input
+            type="text"
+            placeholder="Zoeken"
+            class="search-input"
+            id="sidebar-search" />
+        </div>
+
+        <div class="friends-list" id="friends-list">
+          <div class="empty-state">Vrienden laden...</div>
+        </div>
+      </aside>
+
+      <main class="main-content" id="main-content"></main>
+    </div>
+
+    <div id="profile-modal" class="modal-backdrop" hidden>
+      <section class="modal-card profile-card" aria-label="Profiel">
+        <button class="modal-close" id="profile-close" type="button">x</button>
+        <div id="modal-avatar" class="modal-avatar"></div>
+        <h3 id="modal-username"></h3>
+        <p id="modal-email" class="muted-text"></p>
+
+        <div class="avatar-section">
+          <p class="section-label">Kies je avatar</p>
+          <div id="avatar-grid" class="avatar-grid"></div>
+
+          <div class="avatar-url-row">
+            <input
+              type="text"
+              id="custom-avatar-input"
+              placeholder="Plak een directe afbeeldingslink" />
+            <button id="custom-avatar-btn" type="button">OK</button>
+          </div>
+
+          <label class="file-upload-row">
+            <span>Upload profielfoto</span>
+            <input type="file" id="avatar-file-input" accept="image/*" />
+          </label>
+        </div>
+
+        <button class="danger-wide-btn" id="logout-btn" type="button">Uitloggen</button>
+      </section>
+    </div>
+
+    <!-- Socket.IO must load before the ES module so `io` is available globally -->
+    <script type="module" src="../javascript/app/main.js"></script>
+  </body>
+</html>
