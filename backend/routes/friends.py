@@ -1,3 +1,8 @@
+# =============================================================================
+# routes/friends.py — API voor het sociale gedeelte: vrienden zoeken/toevoegen,
+# verzoeken accepteren/weigeren, en blokkeren/deblokkeren.
+# =============================================================================
+
 from flask import Blueprint, request, jsonify, session
 from extensions import db
 from models.user import User
@@ -13,6 +18,8 @@ friends_bp = Blueprint("friends", __name__, url_prefix="/api")
 
 @friends_bp.route("/friends", methods=["GET"])
 def get_friends():
+    """Geeft je vriendenlijst terug, met per vriend het laatste bericht en het
+    aantal ongelezen berichten (voor de zijbalk)."""
     user_id, error, code = require_auth()
     if error:
         return error, code
@@ -23,11 +30,13 @@ def get_friends():
         if not friend:
             continue
 
+        # Het meest recente bericht tussen jou en deze vriend (beide richtingen).
         last_msg = Message.query.filter(
             ((Message.sender_id == user_id) & (Message.receiver_id == friend.id))
             | ((Message.sender_id == friend.id) & (Message.receiver_id == user_id))
         ).order_by(Message.created_at.desc()).first()
 
+        # Aantal berichten dat hij/zij stuurde en jij nog niet las.
         unread_count = Message.query.filter_by(
             sender_id=friend.id, receiver_id=user_id, is_read=False
         ).count()
@@ -43,6 +52,7 @@ def get_friends():
 
 @friends_bp.route("/friends/requests", methods=["GET"])
 def get_friend_requests():
+    """Geeft de openstaande verzoeken terug: inkomend (naar jou) en uitgaand (van jou)."""
     user_id, error, code = require_auth()
     if error:
         return error, code
@@ -58,6 +68,8 @@ def get_friend_requests():
 
 @friends_bp.route("/friends/add", methods=["POST"])
 def send_friend_request():
+    """Stuurt een vriendschapsverzoek, met allerlei controles (niet jezelf,
+    niet geblokkeerd, niet al bevriend, geen dubbel verzoek)."""
     user_id, error, code = require_auth()
     if error:
         return error, code
@@ -72,6 +84,7 @@ def send_friend_request():
         return jsonify({"error": "Kan geen vriendschapsverzoek sturen"}), 403
     if are_friends(user_id, friend.id):
         return jsonify({"error": "Al bevriend"}), 409
+    # Heeft die persoon JOU al een verzoek gestuurd? Dan moet je accepteren i.p.v. sturen.
     if FriendRequest.query.filter_by(sender_id=friend.id, receiver_id=user_id, status="pending").first():
         return jsonify({"error": "Deze persoon heeft jou al een verzoek gestuurd"}), 409
     if FriendRequest.query.filter_by(sender_id=user_id, receiver_id=friend.id, status="pending").first():
@@ -80,22 +93,26 @@ def send_friend_request():
     req = FriendRequest(sender_id=user_id, receiver_id=friend.id)
     db.session.add(req)
     db.session.commit()
+    # Verwittig de ontvanger realtime.
     notify_users("friend_request", req.to_dict(), friend.id)
     return jsonify({"message": f"Vriendschapsverzoek verstuurd naar {friend.username}!", "request": req.to_dict()}), 201
 
 
 @friends_bp.route("/friends/requests/<int:request_id>/accept", methods=["POST"])
 def accept_friend_request(request_id):
+    """Accepteert een verzoek en maakt de vriendschap in BEIDE richtingen aan."""
     user_id, error, code = require_auth()
     if error:
         return error, code
 
     req = db.session.get(FriendRequest, request_id)
+    # Mag alleen de ontvanger doen, en alleen als het nog 'pending' is.
     if not req or req.receiver_id != user_id or req.status != "pending":
         return jsonify({"error": "Verzoek niet gevonden"}), 404
     if is_blocked_between(user_id, req.sender_id):
         return jsonify({"error": "Kan dit verzoek niet accepteren"}), 403
 
+    # Vriendschap in beide richtingen opslaan (A->B en B->A).
     if not are_friends(user_id, req.sender_id):
         db.session.add(Friendship(user_id=user_id, friend_id=req.sender_id))
     if not are_friends(req.sender_id, user_id):
@@ -109,6 +126,7 @@ def accept_friend_request(request_id):
 
 @friends_bp.route("/friends/requests/<int:request_id>/reject", methods=["POST"])
 def reject_friend_request(request_id):
+    """Weigert een verzoek (zet de status op 'rejected')."""
     user_id, error, code = require_auth()
     if error:
         return error, code
@@ -125,14 +143,17 @@ def reject_friend_request(request_id):
 
 @friends_bp.route("/users/search", methods=["GET"])
 def search_users():
+    """Zoekt gebruikers op (deel van) hun naam. Geeft per resultaat ook de
+    relatie terug (vriend/verzoek/geblokkeerd) zodat de juiste knop kan tonen."""
     user_id, error, code = require_auth()
     if error:
         return error, code
 
     query = request.args.get("q", "").strip()
     if len(query) < 2:
-        return jsonify({"users": []}), 200
+        return jsonify({"users": []}), 200  # minstens 2 letters nodig
 
+    # ilike = hoofdletterongevoelig zoeken; %...% = 'bevat'.
     users = User.query.filter(User.username.ilike(f"%{query}%"), User.id != user_id).limit(10).all()
     results = [{**u.to_dict(), "relation_status": get_relation_status(user_id, u.id)} for u in users]
     return jsonify({"users": results}), 200
@@ -142,6 +163,8 @@ def search_users():
 
 @friends_bp.route("/block/<int:target_id>", methods=["POST"])
 def block_user(target_id):
+    """Blokkeert een gebruiker. Verwijdert meteen de vriendschap en alle
+    openstaande verzoeken tussen jullie."""
     user_id, error, code = require_auth()
     if error:
         return error, code
@@ -151,11 +174,13 @@ def block_user(target_id):
     if BlockedUser.query.filter_by(blocker_id=user_id, blocked_id=target_id).first():
         return jsonify({"error": "Gebruiker is al geblokkeerd"}), 409
 
+    # Bestaande vriendschap (beide richtingen) wissen.
     Friendship.query.filter(
         ((Friendship.user_id == user_id) & (Friendship.friend_id == target_id))
         | ((Friendship.user_id == target_id) & (Friendship.friend_id == user_id))
     ).delete(synchronize_session=False)
 
+    # Openstaande verzoeken (beide richtingen) wissen.
     FriendRequest.query.filter(
         ((FriendRequest.sender_id == user_id) & (FriendRequest.receiver_id == target_id))
         | ((FriendRequest.sender_id == target_id) & (FriendRequest.receiver_id == user_id))
@@ -170,6 +195,7 @@ def block_user(target_id):
 
 @friends_bp.route("/unblock/<int:target_id>", methods=["POST"])
 def unblock_user(target_id):
+    """Heft een blokkering op."""
     user_id, error, code = require_auth()
     if error:
         return error, code
@@ -186,6 +212,7 @@ def unblock_user(target_id):
 
 @friends_bp.route("/blocked", methods=["GET"])
 def get_blocked_users():
+    """Geeft de lijst van gebruikers die JIJ geblokkeerd hebt."""
     user_id, error, code = require_auth()
     if error:
         return error, code

@@ -1,3 +1,7 @@
+# =============================================================================
+# utils/helpers.py — algemene kleine hulpfuncties (tijd, netwerk, bel-servers).
+# =============================================================================
+
 import json
 import os
 import socket
@@ -5,7 +9,10 @@ from datetime import datetime, timezone
 
 
 def iso_utc(value: datetime | None) -> str | None:
-    """Return an ISO-8601 UTC string (e.g. '2024-01-01T00:00:00Z') or None."""
+    """Zet een datum om naar een nette ISO-tekst in UTC (bv. '2024-01-01T00:00:00Z').
+
+    De frontend kan zo'n tekst makkelijk verwerken. Geeft None terug bij een lege waarde.
+    """
     if not value:
         return None
     if value.tzinfo is None:
@@ -16,12 +23,16 @@ def iso_utc(value: datetime | None) -> str | None:
 
 
 def utc_now() -> datetime:
-    """Return a naive UTC datetime (compatible with SQLite storage)."""
+    """Geeft de huidige tijd in UTC terug (zonder tijdzone-info, past bij SQLite)."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def get_lan_ip() -> str:
-    """Best-effort LAN IP detection."""
+    """Zoekt het lokale netwerk-IP van deze computer.
+
+    Truc: we 'verbinden' met 8.8.8.8 (zonder echt data te sturen) en vragen
+    welk lokaal adres daarvoor gebruikt zou worden. Lukt dat niet -> 127.0.0.1.
+    """
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
             probe.connect(("8.8.8.8", 80))
@@ -31,7 +42,11 @@ def get_lan_ip() -> str:
 
 
 def get_ice_servers() -> list[dict]:
-    """Return ICE server list from env or sensible defaults."""
+    """Geeft de ICE-servers terug die nodig zijn om te bellen (WebRTC).
+
+    ICE/STUN-servers helpen twee browsers elkaar te 'vinden' op het internet.
+    We lezen ze uit een omgevingsvariabele, of gebruiken gratis standaardservers.
+    """
     raw = os.environ.get("ICE_SERVERS_JSON", "").strip()
     if raw:
         try:

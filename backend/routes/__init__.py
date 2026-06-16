@@ -1,3 +1,8 @@
+# =============================================================================
+# routes/__init__.py — "inhoudsopgave" van de routes-map.
+# Importeert alle blueprints zodat app.py ze in één keer kan registreren.
+# =============================================================================
+
 from .auth import auth_bp
 from .friends import friends_bp
 from .messages import messages_bp

@@ -1,8 +1,12 @@
 """
-db_migrate.py — Idempotent schema migration helper.
+db_migrate.py — Database-structuur klaarmaken en bijwerken.
 
-Adds any columns introduced after the initial `db.create_all()` so the app
-can be upgraded without losing existing data.
+Probleem dat dit oplost: als je later een nieuwe kolom toevoegt aan een model,
+heeft een BESTAANDE database die kolom nog niet. Dit bestand voegt ontbrekende
+kolommen toe ZONDER bestaande data te wissen.
+
+Het woord "idempotent" betekent: je mag dit 100x draaien, het resultaat blijft
+hetzelfde (er wordt nooit iets dubbel toegevoegd).
 """
 from datetime import timedelta
 from sqlalchemy import inspect
@@ -12,6 +16,8 @@ from extensions import db
 from utils.helpers import utc_now
 
 
+# Per tabel: welke kolommen er (mogelijk) toegevoegd moeten worden, met hun type.
+# Deze lijst gebruiken we om te vergelijken met wat al in de database zit.
 _COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
     "user": {
         "avatar_seed": "VARCHAR(50)",
@@ -43,19 +49,30 @@ _COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
 
 
 def _add_missing_columns():
+    """Voeg kolommen toe die in de database nog ontbreken.
+
+    We vragen aan de database (via 'inspector') welke tabellen en kolommen er al
+    zijn, en voegen met ALTER TABLE alleen toe wat ontbreekt.
+    """
     inspector = inspect(db.engine)
     existing_tables = set(inspector.get_table_names())
 
     for table, columns in _COLUMN_DEFINITIONS.items():
         if table not in existing_tables:
-            continue
+            continue  # tabel bestaat nog niet -> create_all() maakt ze later
         existing_cols = {col["name"] for col in inspector.get_columns(table)}
         for col_name, col_sql in columns.items():
             if col_name not in existing_cols:
+                # Voeg de ontbrekende kolom toe.
                 db.session.execute(sql_text(f'ALTER TABLE "{table}" ADD COLUMN "{col_name}" {col_sql}'))
 
 
 def _backfill_nulls():
+    """Vul zinnige standaardwaarden in voor velden die nog leeg (NULL) zijn.
+
+    Bijvoorbeeld: oude gebruikers zonder thema krijgen 'purple', oude berichten
+    krijgen een aanmaakdatum, stories krijgen een verloopdatum (+24u), enz.
+    """
     now = utc_now()
     statements = [
         ('UPDATE "user" SET avatar_seed = username WHERE avatar_seed IS NULL', {}),
@@ -80,11 +97,18 @@ def _backfill_nulls():
         try:
             db.session.execute(sql_text(stmt), params)
         except Exception:
+            # Als een UPDATE faalt (bv. tabel bestaat nog niet), gewoon negeren.
             db.session.rollback()
 
 
 def ensure_schema():
-    """Create tables + migrate existing databases to the current schema."""
+    """Maak de tabellen aan + breng een bestaande database naar de huidige vorm.
+
+    Wordt aangeroepen vanuit app.py bij het opstarten. Drie stappen:
+      1) create_all(): maak ontbrekende tabellen aan.
+      2) voeg ontbrekende kolommen toe.
+      3) vul lege velden met standaardwaarden.
+    """
     db.create_all()
     _add_missing_columns()
     _backfill_nulls()

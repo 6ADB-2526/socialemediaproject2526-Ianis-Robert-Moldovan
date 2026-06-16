@@ -1,11 +1,17 @@
 /** @format */
 
+// =============================================================================
+// sidebar.js — de LINKERZIJBALK: stories, vriendenlijst, groepen, verzoeken.
+// Bevat ook de "data-laders" die alles bij de backend ophalen.
+// =============================================================================
+
 import { state } from "./state.js";
 import { api, toast } from "../utils/api.js";
 import { escapeHtml, initials, avatarMarkup, groupAvatarMarkup, updateRelativeLabels } from "../utils/dom.js";
 
-// ── Message preview helpers ───────────────────────────────────────────────
+// ── Voorbeeldtekst-hulpjes ────────────────────────────────────────────────
 
+// Korte voorbeeldtekst van een bericht (voor in de lijst).
 export function messagePreview(msg) {
   if (!msg) return "Nog geen berichten";
   if (msg.is_voice) return "Spraakbericht";
@@ -13,13 +19,16 @@ export function messagePreview(msg) {
   return msg.text || "Bericht";
 }
 
+// Voorbeeldtekst voor een groep: "Jij: ..." of "Naam: ...".
 export function groupPreview(group) {
   if (!group?.last_message) return `${group?.member_count || 0} leden`;
   const sender = group.last_message.sender_id === state.user?.id ? "Jij" : group.last_message.sender_username;
   return `${sender}: ${messagePreview(group.last_message)}`;
 }
 
-// ── Data loaders ──────────────────────────────────────────────────────────
+// ── Data-laders ────────────────────────────────────────────────────────────
+// Elke functie haalt iets op bij de backend, bewaart het in 'state', en
+// hertekent de lijst.
 
 export async function loadFriends() {
   const data = await api("/friends");
@@ -55,12 +64,14 @@ export async function loadStories() {
   renderStories();
 }
 
+// Laadt alles tegelijk (sneller dan één voor één). Promise.all = parallel.
 export async function refreshSocialData() {
   await Promise.all([loadFriends(), loadGroups(), loadRequests(), loadBlockedUsers(), loadStories()]);
 }
 
-// ── Request actions ───────────────────────────────────────────────────────
+// ── Verzoek-acties ────────────────────────────────────────────────────────
 
+// Accepteer een vriendschapsverzoek en ververs daarna alle sociale data.
 export async function acceptRequest(requestId) {
   try {
     await api(`/friends/requests/${requestId}/accept`, { method: "POST" });
@@ -71,6 +82,7 @@ export async function acceptRequest(requestId) {
   }
 }
 
+// Weiger een vriendschapsverzoek.
 export async function rejectRequest(requestId) {
   try {
     await api(`/friends/requests/${requestId}/reject`, { method: "POST" });
@@ -81,8 +93,9 @@ export async function rejectRequest(requestId) {
   }
 }
 
-// ── Stories ───────────────────────────────────────────────────────────────
+// ── Stories ─────────────────────────────────────────────────────────────────
 
+// Tekent de rij met story-bolletjes bovenaan de zijbalk.
 export function renderStories() {
   const container = document.getElementById("stories-container");
   if (!container) return;
@@ -103,6 +116,7 @@ export function renderStories() {
     </div>
   `;
 
+  // Klik op een bolletje -> open de story-viewer.
   container.querySelectorAll("[data-story-user]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const group = state.stories.find((s) => String(s.user_id) === btn.dataset.storyUser);
@@ -111,6 +125,7 @@ export function renderStories() {
   });
 }
 
+// Toont de eerste story van een gebruiker in een pop-up.
 function showStoryViewer(storyGroup) {
   import("./modals.js").then(({ createAndOpenModal }) => {
     const first = storyGroup.stories?.[0];
@@ -121,12 +136,14 @@ function showStoryViewer(storyGroup) {
   });
 }
 
-// ── Friends list ──────────────────────────────────────────────────────────
+// ── Vriendenlijst ────────────────────────────────────────────────────────────
 
+// Tekent de hele lijst: eerst ontvangen verzoeken, dan groepen, dan vrienden.
 export function renderFriendsList() {
   const container = document.getElementById("friends-list");
   if (!container) return;
 
+  // 1) Ontvangen vriendschapsverzoeken (met OK/Nee-knoppen).
   const requestHtml = state.incomingRequests.map((r) => `
     <article class="request-item">
       <div class="friend-avatar-container">${avatarMarkup(r.sender)}</div>
@@ -141,6 +158,7 @@ export function renderFriendsList() {
     </article>
   `).join("");
 
+  // 2) Groepen (gemarkeerd als 'actief' als die openstaat).
   const groupsHtml = state.groups.map((g) => {
     const active = state.selectedGroup?.id === g.id ? "active-chat" : "";
     return `
@@ -158,6 +176,7 @@ export function renderFriendsList() {
     `;
   }).join("");
 
+  // 3) Vrienden (met laatste bericht, tijd en ongelezen-teller).
   const friendsHtml = state.friends.map((f) => {
     const active = state.selectedFriend?.id === f.id ? "active-chat" : "";
     return `
@@ -178,7 +197,8 @@ export function renderFriendsList() {
   const emptyHtml = `<div class="empty-state">Zoek vrienden met de plus-knop of maak een groep.</div>`;
   container.innerHTML = `${requestHtml}${groupsHtml}${friendsHtml || (!groupsHtml ? emptyHtml : "")}`;
 
-  // Event delegation
+  // ── Klikken koppelen (event delegation) ──
+  // Klik op een groep -> open de groepschat (chat.js wordt 'lui' ingeladen).
   container.querySelectorAll("[data-group-id]").forEach((el) => {
     el.addEventListener("click", () => {
       const group = state.groups.find((g) => String(g.id) === el.dataset.groupId);
@@ -186,6 +206,7 @@ export function renderFriendsList() {
     });
   });
 
+  // Klik op een vriend -> open de 1-op-1 chat.
   container.querySelectorAll("[data-friend-id]").forEach((el) => {
     el.addEventListener("click", () => {
       const friend = state.friends.find((f) => String(f.id) === el.dataset.friendId);
@@ -193,6 +214,7 @@ export function renderFriendsList() {
     });
   });
 
+  // Accepteer/weiger-knoppen bij verzoeken (stopPropagation = klik niet 'doorgeven').
   container.querySelectorAll("[data-accept-request]").forEach((btn) => {
     btn.addEventListener("click", (e) => { e.stopPropagation(); acceptRequest(btn.dataset.acceptRequest); });
   });
@@ -201,11 +223,12 @@ export function renderFriendsList() {
     btn.addEventListener("click", (e) => { e.stopPropagation(); rejectRequest(btn.dataset.rejectRequest); });
   });
 
-  updateRelativeLabels();
+  updateRelativeLabels();  // tijd-labels invullen
 }
 
-// ── Sidebar search ────────────────────────────────────────────────────────
+// ── Zoeken in de zijbalk ────────────────────────────────────────────────────
 
+// Filtert de getoonde vrienden/groepen terwijl je typt (minstens 2 letters).
 export function setupSidebarSearch() {
   const input = document.getElementById("sidebar-search");
   if (!input) return;
@@ -214,6 +237,8 @@ export function setupSidebarSearch() {
     const q = input.value.trim().toLowerCase();
     if (q.length < 2) { renderFriendsList(); return; }
 
+    // Bewaar de volledige lijsten, filter tijdelijk, teken, en zet terug.
+    // Zo blijft de echte data in 'state' compleet; alleen de weergave is gefilterd.
     const prevGroups = state.groups;
     const prevFriends = state.friends;
     state.groups = state.groups.filter((g) => g.name.toLowerCase().includes(q));

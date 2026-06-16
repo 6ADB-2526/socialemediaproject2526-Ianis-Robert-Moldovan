@@ -1,13 +1,24 @@
+# =============================================================================
+# utils/auth.py — twee kleine hulpfuncties die in bijna ELKE route gebruikt worden.
+# =============================================================================
+
 from flask import session, jsonify
 from extensions import db
 
 
 def require_auth():
-    """Return (user_id, None, None) or (None, error_response, status_code)."""
-    # Avoid circular import by importing model here
+    """Controleert of er een ingelogde gebruiker is.
+
+    Geeft terug: (user_id, None, None) als alles oké is,
+    of (None, foutmelding, statuscode) als er iemand NIET ingelogd is.
+
+    Zo hoeft elke route maar één regel te schrijven i.p.v. de hele check te
+    herhalen (DRY = Don't Repeat Yourself).
+    """
+    # Lokale import om circulaire import te vermijden.
     from models.user import User
 
-    user_id = session.get("user_id")
+    user_id = session.get("user_id")   # zit er een user_id in de sessie-cookie?
     if not user_id:
         return None, jsonify({"error": "Niet ingelogd"}), 401
     user = db.session.get(User, user_id)
@@ -17,7 +28,8 @@ def require_auth():
 
 
 def notify_users(event_name: str, payload, *user_ids):
-    """Emit a Socket.IO event to each user's personal room."""
+    """Stuur een realtime Socket.IO-event naar de persoonlijke kamer van
+    één of meer gebruikers (bv. 'je hebt een nieuw bericht')."""
     from extensions import socketio
 
     for uid in user_ids:

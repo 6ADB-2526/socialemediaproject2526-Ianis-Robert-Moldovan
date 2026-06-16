@@ -1,3 +1,8 @@
+# =============================================================================
+# routes/messages.py — API voor PRIVÉberichten: ophalen, sturen, snaps
+# openen/bewaren, en verwijderen.
+# =============================================================================
+
 from flask import Blueprint, request, jsonify
 from extensions import db, socketio
 from models.user import User
@@ -9,26 +14,33 @@ messages_bp = Blueprint("messages", __name__, url_prefix="/api")
 
 
 def _get_room(user1: int, user2: int) -> str:
+    """Naam van de gedeelde chat-kamer voor twee gebruikers.
+    De id's worden gesorteerd (min/max) zodat beide personen DEZELFDE naam
+    krijgen, ongeacht wie de zender is."""
     return f"chat_{min(user1, user2)}_{max(user1, user2)}"
 
 
 @messages_bp.route("/messages/<int:friend_id>", methods=["GET"])
 def get_messages(friend_id):
+    """Haalt het volledige gesprek met een vriend op en markeert de berichten
+    van die vriend als 'gelezen'."""
     user_id, error, code = require_auth()
     if error:
         return error, code
 
+    # Controles: niet geblokkeerd en wél bevriend.
     if is_blocked_between(user_id, friend_id):
         return jsonify({"error": "Dit gesprek is geblokkeerd"}), 403
     if not are_friends(user_id, friend_id):
         return jsonify({"error": "Je bent niet bevriend met deze gebruiker"}), 403
 
+    # Alle berichten tussen jullie, oudste eerst.
     messages = Message.query.filter(
         ((Message.sender_id == user_id) & (Message.receiver_id == friend_id))
         | ((Message.sender_id == friend_id) & (Message.receiver_id == user_id))
     ).order_by(Message.created_at.asc()).all()
 
-    # Mark unread messages as read
+    # Markeer de ongelezen berichten van de vriend als gelezen.
     Message.query.filter_by(
         sender_id=friend_id, receiver_id=user_id, is_read=False
     ).update({"is_read": True})
@@ -39,6 +51,8 @@ def get_messages(friend_id):
 
 @messages_bp.route("/messages/send", methods=["POST"])
 def send_message():
+    """Verstuurt een bericht: tekst, snap of voice. Controleert eerst of de
+    ontvanger bestaat, niet geblokkeerd is en een vriend is."""
     user_id, error, code = require_auth()
     if error:
         return error, code
@@ -56,6 +70,7 @@ def send_message():
     if not are_friends(user_id, receiver_id):
         return jsonify({"error": "Je moet eerst vrienden zijn"}), 403
 
+    # Bepaal het type bericht uit de meegestuurde data.
     text = data.get("text", "").strip()
     is_snap = bool(data.get("is_snap", False))
     snap_data = data.get("snap_data") or None
@@ -69,6 +84,7 @@ def send_message():
     msg = Message(
         sender_id=user_id,
         receiver_id=receiver_id,
+        # Tekst alleen bewaren als het géén snap/voice is.
         text=text if not is_snap and not is_voice else None,
         is_snap=is_snap,
         snap_data=snap_data,
@@ -79,7 +95,8 @@ def send_message():
     db.session.add(msg)
     db.session.commit()
 
-    # Send personalised copies so snap status is correct per viewer
+    # We sturen een PERSOONLIJKE kopie naar elke kant, want de snap-status
+    # verschilt per kijker (verzender ziet 'sent', ontvanger ziet 'new').
     notify_users("new_message", msg.to_dict(viewer_id=user_id), user_id)
     notify_users("new_message", msg.to_dict(viewer_id=receiver_id), receiver_id)
     notify_users("message_notification", msg.to_dict(viewer_id=receiver_id), receiver_id)
@@ -89,6 +106,8 @@ def send_message():
 
 @messages_bp.route("/messages/<int:message_id>/open_snap", methods=["POST"])
 def open_snap(message_id):
+    """Opent een snap. Houdt bij hoe vaak hij geopend is: 1x kijken + 1x replay,
+    daarna 'verlopen'. De server bepaalt dit (de frontend kan het niet omzeilen)."""
     user_id, error, code = require_auth()
     if error:
         return error, code
@@ -103,24 +122,29 @@ def open_snap(message_id):
     if is_blocked_between(user_id, other_id):
         return jsonify({"error": "Dit gesprek is geblokkeerd"}), 403
 
+    # Een bewaarde snap mag altijd opnieuw bekeken worden.
     if msg.snap_saved:
         return jsonify({"message": msg.to_dict(viewer_id=user_id, include_snap_data=True), "snap_data": msg.snap_data}), 200
 
+    # De verzender opent zijn eigen snap niet (die ziet enkel de status).
     if user_id == msg.sender_id:
         return jsonify({"error": "Je verzonden snap blijft als status in de chat."}), 403
+    # 2x of meer = verlopen.
     if msg.snap_open_count >= 2:
         return jsonify({"error": "Deze snap is verlopen"}), 410
 
-    msg.snap_open_count += 1
+    msg.snap_open_count += 1   # tel deze opening mee
     db.session.commit()
 
     updated = msg.to_dict(viewer_id=user_id)
+    # Laat ook de andere kant de nieuwe status zien (bv. 'replay' -> 'expired').
     socketio.emit("snap_updated", updated, room=_get_room(msg.sender_id, msg.receiver_id))
     return jsonify({"message": updated, "snap_data": msg.snap_data}), 200
 
 
 @messages_bp.route("/messages/<int:message_id>/save_snap", methods=["POST"])
 def save_snap(message_id):
+    """Bewaart een snap permanent in de chat (dan verloopt hij niet meer)."""
     user_id, error, code = require_auth()
     if error:
         return error, code
@@ -145,6 +169,7 @@ def save_snap(message_id):
 
 @messages_bp.route("/messages/<int:message_id>", methods=["DELETE"])
 def delete_message(message_id):
+    """Verwijdert een bericht. Mag alleen de VERZENDER van dat bericht doen."""
     user_id, error, code = require_auth()
     if error:
         return error, code

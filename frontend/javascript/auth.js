@@ -1,20 +1,27 @@
 /** @format */
 
+// =============================================================================
+// auth.js — de logica achter de LOGIN-/REGISTRATIEpagina (auth.html).
+// Staat los van de app-modules: auth.html gebruikt geen ES-modules, daarom
+// heeft dit bestand zijn eigen kopie van de backend-URL-logica.
+// =============================================================================
+
 // ── Password visibility toggle ────────────────────────────────────────────
-// (used by both login and register fields that have a toggle button)
+// Knopjes die een wachtwoordveld tonen/verbergen (oog-icoon).
 
 document.querySelectorAll("[data-toggle-password]").forEach((btn) => {
   const targetId = btn.dataset.togglePassword;
   const input = document.getElementById(targetId);
   if (!input) return;
   btn.addEventListener("click", () => {
+    // Wissel tussen type "password" (verborgen) en "text" (zichtbaar).
     const isText = input.getAttribute("type") === "text";
     input.setAttribute("type", isText ? "password" : "text");
     btn.style.color = isText ? "#b3b5b8" : "#141414";
   });
 });
 
-// Legacy: support original single-id togglePassword / passwordInput pair
+// Oudere variant met vaste id's (voor het geval die nog gebruikt wordt).
 const togglePassword = document.getElementById("togglePassword");
 const passwordInput = document.getElementById("passwordInput");
 if (togglePassword && passwordInput) {
@@ -25,11 +32,12 @@ if (togglePassword && passwordInput) {
   });
 }
 
-// ── Sidebar search / scroll (auth landing page) ───────────────────────────
+// ── Sidebar search / scroll (decoratief op de landingspagina) ──────────────
 
 const searchInput = document.getElementById("searchInput");
 const clearIcon = document.getElementById("clearIcon");
 if (searchInput && clearIcon) {
+  // Toon het kruisje om te wissen zodra er tekst staat.
   searchInput.addEventListener("input", () => {
     clearIcon.style.display = searchInput.value.length > 0 ? "block" : "none";
   });
@@ -43,12 +51,15 @@ if (searchInput && clearIcon) {
 const scrollArea = document.getElementById("scrollArea");
 const chatBtn = document.getElementById("chatBtn");
 if (scrollArea && chatBtn) {
+  // Toon een knop pas nadat de gebruiker een stuk gescrold heeft.
   scrollArea.addEventListener("scroll", () => {
     chatBtn.classList.toggle("show", scrollArea.scrollTop > 200);
   });
 }
 
 // ── Backend origin resolution ─────────────────────────────────────────────
+// Zelfde logica als in utils/config.js, maar hier herhaald omdat deze pagina
+// geen modules importeert.
 
 function normalizeOrigin(value) {
   try { return new URL(value).origin; } catch { return ""; }
@@ -75,6 +86,7 @@ const BACKEND_ORIGIN = (() => {
 const API = `${BACKEND_ORIGIN}/api`;
 
 // ── UI helpers ────────────────────────────────────────────────────────────
+// Tonen/verbergen van fout- en succesboodschappen op de pagina.
 
 function showError(msg) {
   const el = document.getElementById("error-msg");
@@ -102,6 +114,8 @@ function hideMessages() {
 }
 
 // ── Tab switching ─────────────────────────────────────────────────────────
+// Wisselen tussen het inlog- en registratieformulier (window.* zodat de
+// onclick="switchTab(...)" in de HTML erbij kan).
 
 window.switchTab = function (tab) {
   hideMessages();
@@ -114,24 +128,27 @@ window.switchTab = function (tab) {
   document.getElementById("auth-title").textContent = isLogin ? "Inloggen bij Snapchat" : "Account aanmaken";
 };
 
-// ── Login ─────────────────────────────────────────────────────────────────
+// ── Formulier versturen (gedeeld voor login én register) ───────────────────
 
+// Algemene functie die een formulier naar de backend stuurt en de knop tijdelijk
+// uitschakelt. bodyFn() levert de data die verstuurd wordt.
 async function submitForm(formId, btnId, btnLabel, endpoint, bodyFn, successMsg) {
   hideMessages();
   const btn = document.getElementById(btnId);
-  btn.disabled = true;
+  btn.disabled = true;             // voorkom dubbel klikken
   btn.textContent = "Bezig...";
 
   try {
     const res = await fetch(`${API}${endpoint}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
+      credentials: "include",       // sessie-cookie meesturen
       body: JSON.stringify(bodyFn()),
     });
     const data = await res.json();
     if (res.ok) {
       showSuccess(successMsg);
+      // Na succes doorsturen naar de hoofd-app.
       setTimeout(() => (window.location.href = "./pages/snap.html"), 1000);
     } else {
       showError(data.error || "Er ging iets mis.");
@@ -144,8 +161,9 @@ async function submitForm(formId, btnId, btnLabel, endpoint, bodyFn, successMsg)
   btn.textContent = btnLabel;
 }
 
+// Koppel het login-formulier.
 document.getElementById("form-login")?.addEventListener("submit", (e) => {
-  e.preventDefault();
+  e.preventDefault();   // voorkom dat de pagina herlaadt
   submitForm(
     "form-login",
     "btn-login",
@@ -159,6 +177,7 @@ document.getElementById("form-login")?.addEventListener("submit", (e) => {
   );
 });
 
+// Koppel het registratie-formulier.
 document.getElementById("form-register")?.addEventListener("submit", (e) => {
   e.preventDefault();
   submitForm(
@@ -175,7 +194,9 @@ document.getElementById("form-register")?.addEventListener("submit", (e) => {
   );
 });
 
-// ── Auto-redirect if already logged in ───────────────────────────────────
+// ── Auto-redirect als je al ingelogd bent ─────────────────────────────────
+// Bij het laden: vraag /me op. Lukt dat, dan ben je al ingelogd -> meteen door
+// naar de app, zodat je niet opnieuw hoeft in te loggen.
 
 (async () => {
   try {

@@ -1,21 +1,30 @@
 /** @format */
 
+// =============================================================================
+// modals.js — alle POP-UPVENSTERS (modals): vrienden zoeken/toevoegen, een
+// groep maken, groepsinfo tonen, en de lijsten van verzoeken/zoekresultaten.
+// =============================================================================
+
 import { state } from "./state.js";
 import { api, toast } from "../utils/api.js";
 import { escapeHtml, avatarMarkup, createModal, openModal, closeModal } from "../utils/dom.js";
 import { acceptRequest, rejectRequest, loadRequests, loadGroups } from "./sidebar.js";
 import { openChat, openGroupChat } from "./chat.js";
 
+// We exporteren deze drie opnieuw zodat andere bestanden ze via modals.js kunnen
+// gebruiken zonder dom.js apart te moeten importeren.
 export { createModal, openModal, closeModal };
 
+// Maakt een modal én opent ze meteen (handige combinatie).
 export function createAndOpenModal(id, title, bodyHtml) {
   const modal = createModal(id, title, bodyHtml);
   openModal(modal);
   return modal;
 }
 
-// ── Add friend modal ──────────────────────────────────────────────────────
+// ── Vrienden zoeken-pop-up ─────────────────────────────────────────────────
 
+// Toont de pop-up om vrienden te zoeken + de lijsten met verzoeken.
 export function showAddFriendModal() {
   const modal = createModal("add-friend-modal", "Vrienden zoeken", `
     <div class="friend-search-box">
@@ -35,6 +44,8 @@ export function showAddFriendModal() {
   openModal(modal);
   renderRequestLists(modal);
 
+  // Terwijl je typt zoeken, maar met een 'debounce' van 250ms: pas zoeken
+  // wanneer je heel even stopt met typen (anders bij elke toets een aanvraag).
   const input = modal.querySelector("#friend-search-input");
   input.focus();
   input.addEventListener("input", () => {
@@ -43,9 +54,11 @@ export function showAddFriendModal() {
   });
 }
 
-// ── Create group modal ────────────────────────────────────────────────────
+// ── Groep maken-pop-up ─────────────────────────────────────────────────────
 
+// Toont de pop-up om een nieuwe groep te maken (met aanvinkbare vriendenlijst).
 export function showCreateGroupModal() {
+  // Bouw voor elke vriend een aanvink-rij.
   const friendOptions = state.friends.map((f) => `
     <label class="group-select-row">
       ${avatarMarkup(f, "compact-avatar")}
@@ -68,6 +81,7 @@ export function showCreateGroupModal() {
   `);
 
   openModal(modal);
+  // Bij het indienen: verzamel de aangevinkte vrienden en maak de groep aan.
   modal.querySelector("#create-group-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const selectedIds = [...modal.querySelectorAll('input[name="group-friend"]:checked')].map((i) => Number(i.value));
@@ -78,15 +92,16 @@ export function showCreateGroupModal() {
       toast("Groep aangemaakt.", "success");
       closeModal(modal);
       await loadGroups();
-      await openGroupChat(data.group);
+      await openGroupChat(data.group);   // open meteen de nieuwe groep
     } catch (err) {
       toast(err.message, "error");
     }
   });
 }
 
-// ── Group info modal ──────────────────────────────────────────────────────
+// ── Groepsinfo-pop-up ──────────────────────────────────────────────────────
 
+// Toont de ledenlijst van een groep (de maker krijgt een 'Maker'-label).
 export function showGroupInfoModal(group) {
   const modal = createModal("group-info-modal", group.name, `
     <div class="group-members-list">
@@ -102,12 +117,15 @@ export function showGroupInfoModal(group) {
   openModal(modal);
 }
 
-// ── Request lists ─────────────────────────────────────────────────────────
+// ── Verzoeken-lijsten ──────────────────────────────────────────────────────
 
+// Tekent de lijsten met ontvangen en verstuurde verzoeken in de pop-up.
+// root = waar gezocht wordt naar de elementen (de pop-up zelf).
 export function renderRequestLists(root = document) {
   const incoming = root.querySelector("#incoming-request-list");
   const outgoing = root.querySelector("#outgoing-request-list");
 
+  // Ontvangen verzoeken: met OK/Nee-knoppen.
   if (incoming) {
     incoming.innerHTML = state.incomingRequests.length
       ? state.incomingRequests.map((r) => `
@@ -121,6 +139,7 @@ export function renderRequestLists(root = document) {
       : `<p class="muted-text">Geen nieuwe verzoeken.</p>`;
   }
 
+  // Verstuurde verzoeken: alleen tonen met een 'Verstuurd'-label.
   if (outgoing) {
     outgoing.innerHTML = state.outgoingRequests.length
       ? state.outgoingRequests.map((r) => `
@@ -133,6 +152,7 @@ export function renderRequestLists(root = document) {
       : `<p class="muted-text">Geen openstaande verzoeken.</p>`;
   }
 
+  // Knoppen koppelen; na de actie de lijsten opnieuw tekenen.
   root.querySelectorAll("[data-accept-request]").forEach((btn) => {
     btn.addEventListener("click", async () => { await acceptRequest(btn.dataset.acceptRequest); renderRequestLists(root); });
   });
@@ -141,8 +161,9 @@ export function renderRequestLists(root = document) {
   });
 }
 
-// ── User search ───────────────────────────────────────────────────────────
+// ── Gebruikers zoeken ──────────────────────────────────────────────────────
 
+// Zoekt gebruikers via de API en toont de resultaten (minstens 2 letters).
 async function searchUsers(query, root = document) {
   const results = root.querySelector("#friend-search-results");
   if (!results) return;
@@ -150,6 +171,7 @@ async function searchUsers(query, root = document) {
   if (trimmed.length < 2) { results.innerHTML = `<p class="muted-text">Begin met zoeken...</p>`; return; }
   results.innerHTML = `<p class="muted-text">Zoeken...</p>`;
   try {
+    // encodeURIComponent zorgt dat speciale tekens veilig in de URL passen.
     const data = await api(`/users/search?q=${encodeURIComponent(trimmed)}`);
     renderSearchResults(data.users || [], results, root);
   } catch (err) {
@@ -157,6 +179,7 @@ async function searchUsers(query, root = document) {
   }
 }
 
+// Tekent de zoekresultaten, elk met de juiste actieknop (zie searchActionFor).
 function renderSearchResults(users, container, root) {
   if (!users.length) { container.innerHTML = `<p class="muted-text">Geen users gevonden.</p>`; return; }
 
@@ -173,6 +196,7 @@ function renderSearchResults(users, container, root) {
     `;
   }).join("");
 
+  // Afhankelijk van de knop: verzoek sturen, chatten, of een verzoek accepteren.
   container.querySelectorAll("[data-user-action]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const action = btn.dataset.userAction;
@@ -189,16 +213,19 @@ function renderSearchResults(users, container, root) {
   });
 }
 
+// Bepaalt welke knop een zoekresultaat krijgt, op basis van de relatie.
+// (vrienden -> Chat, verzoek verstuurd -> uitgeschakeld, enz.)
 function searchActionFor(user) {
   switch (user.relation_status) {
     case "friends": return { label: "Chat", action: "chat", primary: true };
     case "request_sent": return { label: "Verstuurd", action: "none", disabled: true };
     case "request_received": return { label: "Accepteer", action: "accept", primary: true };
     case "blocked": return { label: "Geblokkeerd", action: "none", disabled: true };
-    default: return { label: "Verzoek", action: "add", primary: true };
+    default: return { label: "Verzoek", action: "add", primary: true };  // nog geen relatie
   }
 }
 
+// Stuurt een vriendschapsverzoek en ververst daarna de lijsten/zoekresultaten.
 async function sendFriendRequest(username, root = document) {
   try {
     await api("/friends/add", { method: "POST", body: JSON.stringify({ username }) });
@@ -206,6 +233,7 @@ async function sendFriendRequest(username, root = document) {
     await loadRequests();
     const modal = document.getElementById("add-friend-modal");
     if (modal) renderRequestLists(modal);
+    // Zoekresultaten verversen zodat de knop nu 'Verstuurd' toont.
     const input = root.querySelector("#friend-search-input");
     if (input && modal) await searchUsers(input.value, modal);
   } catch (err) {

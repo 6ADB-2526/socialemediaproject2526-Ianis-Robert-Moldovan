@@ -1,18 +1,26 @@
 /** @format */
 
+// =============================================================================
+// chat.js — HET GROOTSTE app-bestand: het chatvenster zelf.
+// Verantwoordelijk voor: een gesprek openen, berichten tekenen, tekst/snap/voice
+// versturen, snaps openen/bewaren, berichten verwijderen, en 'typt...'-signalen.
+// =============================================================================
+
 import { state } from "./state.js";
 import { api, toast } from "../utils/api.js";
 import { escapeHtml, initials, avatarMarkup, groupAvatarMarkup, updateRelativeLabels, scrollMessagesToBottom, blobToDataUrl } from "../utils/dom.js";
 import { canUseMediaDevices, mediaUnavailableMessage, readMediaError, getSupportedAudioMimeType } from "../utils/media.js";
 import { loadFriends, loadGroups } from "./sidebar.js";
 
+// Kleine helper: verwijzingen naar het hoofdgebied en de body.
 const els = () => ({
   main: document.getElementById("main-content"),
   body: document.body,
 });
 
-// ── Chat shell rendering ──────────────────────────────────────────────────
+// ── Beginscherm ────────────────────────────────────────────────────────────
 
+// Tekent het startscherm (als er nog geen chat open is).
 export function renderHome() {
   const { main } = els();
   main.innerHTML = `
@@ -29,25 +37,33 @@ export function renderHome() {
     </section>
   `;
 
+  // De knoppen laden de juiste module pas in wanneer je klikt (lui laden).
   document.getElementById("home-add-friend").addEventListener("click", () => import("./modals.js").then(m => m.showAddFriendModal()));
   document.getElementById("home-create-group").addEventListener("click", () => import("./modals.js").then(m => m.showCreateGroupModal()));
   document.getElementById("home-camera").addEventListener("click", () => import("./camera.js").then(m => m.showCamera()));
 }
 
+// ── Een chat openen ──────────────────────────────────────────────────────────
+
+// Opent een 1-op-1 gesprek met een vriend.
 export async function openChat(friend) {
+  // Verlaat eerst de kamer van de vorige open chat/groep.
   if (state.selectedFriend?.id && state.socket) state.socket.emit("leave_chat", { friend_id: state.selectedFriend.id });
   if (state.selectedGroup?.id && state.socket) state.socket.emit("leave_group_chat", { group_id: state.selectedGroup.id });
 
+  // Onthoud welke chat nu open is.
   state.selectedFriend = friend;
   state.selectedGroup = null;
   state.messages = [];
 
   const { renderFriendsList } = await import("./sidebar.js");
-  renderFriendsList();
-  renderChatShell(friend);
+  renderFriendsList();      // markeer deze vriend als 'actief' in de lijst
+  renderChatShell(friend);  // teken het lege chatvenster
 
+  // Sluit aan bij de realtime-kamer van dit gesprek.
   if (state.socket) state.socket.emit("join_chat", { friend_id: friend.id });
 
+  // Haal de berichten op en teken ze.
   try {
     const data = await api(`/messages/${friend.id}`);
     state.messages = data.messages || [];
@@ -58,6 +74,7 @@ export async function openChat(friend) {
   }
 }
 
+// Opent een groepschat (gelijkaardig aan openChat, maar voor groepen).
 export async function openGroupChat(group) {
   if (state.selectedFriend?.id && state.socket) state.socket.emit("leave_chat", { friend_id: state.selectedFriend.id });
   if (state.selectedGroup?.id && state.socket) state.socket.emit("leave_group_chat", { group_id: state.selectedGroup.id });
@@ -82,6 +99,7 @@ export async function openGroupChat(group) {
   }
 }
 
+// Tekent het 'skelet' van een 1-op-1 chat (header, berichtengebied, invoerbalk).
 function renderChatShell(friend) {
   const { main, body } = els();
   main.innerHTML = `
@@ -113,6 +131,7 @@ function renderChatShell(friend) {
     </section>
   `;
 
+  // Alle knoppen en het formulier koppelen aan hun functie.
   document.getElementById("chat-form").addEventListener("submit", sendTextMessage);
   document.getElementById("chat-input").addEventListener("input", handleTyping);
   document.getElementById("voice-btn").addEventListener("click", toggleVoiceRecording);
@@ -128,9 +147,10 @@ function renderChatShell(friend) {
     import("./sidebar.js").then(m => m.renderFriendsList());
   });
 
-  body.classList.add("chat-open");
+  body.classList.add("chat-open");  // voor de mobiele weergave
 }
 
+// Tekent het skelet van een GROEPschat (lijkt op renderChatShell, geen snap/bel).
 function renderGroupChatShell(group) {
   const { main, body } = els();
   main.innerHTML = `
@@ -175,8 +195,9 @@ function renderGroupChatShell(group) {
   body.classList.add("chat-open");
 }
 
-// ── Message rendering ─────────────────────────────────────────────────────
+// ── Berichten tekenen ────────────────────────────────────────────────────────
 
+// Tekent alle berichten van de open chat in het berichtengebied.
 export function renderMessages() {
   const container = document.getElementById("chat-messages");
   if (!container) return;
@@ -186,6 +207,7 @@ export function renderMessages() {
     return;
   }
 
+  // Voor elk bericht een 'bubbel' bouwen. 'own' = is dit mijn eigen bericht?
   container.innerHTML = state.messages.map((msg) => {
     const own = msg.sender_id === state.user.id;
     return `
@@ -205,10 +227,12 @@ export function renderMessages() {
     `;
   }).join("");
 
+  // Verwijder-knoppen koppelen.
   container.querySelectorAll("[data-delete-message]").forEach((btn) => {
     btn.addEventListener("click", () => deleteMessage(btn.dataset.deleteMessage));
   });
 
+  // Snap-openen-knoppen koppelen.
   container.querySelectorAll("[data-open-snap]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const msg = state.messages.find((m) => String(m.id) === btn.dataset.openSnap);
@@ -217,9 +241,10 @@ export function renderMessages() {
   });
 
   updateRelativeLabels();
-  scrollMessagesToBottom();
+  scrollMessagesToBottom();  // automatisch naar het nieuwste bericht scrollen
 }
 
+// Bepaalt HOE de inhoud van één bericht getoond wordt: voice, snap of tekst.
 function renderMessageContent(msg) {
   if (msg.is_voice && msg.voice_data) {
     const dur = msg.voice_duration ? `${msg.voice_duration}s` : "";
@@ -235,6 +260,8 @@ function renderMessageContent(msg) {
   return `<div class="text-bubble">${escapeHtml(msg.text)}</div>`;
 }
 
+// Tekent de snap-knop met de juiste tekst afhankelijk van de status
+// (open / replay / verlopen / bewaard / verstuurd).
 function renderSnapBubble(msg) {
   const own = msg.sender_id === state.user.id;
   const status = msg.snap_status || "new";
@@ -245,6 +272,7 @@ function renderSnapBubble(msg) {
     replay: ["Replay snap", "Nog 1 keer"],
     expired: ["Snap verlopen", "Niet meer beschikbaar"],
   };
+  // Standaardtekst hangt af van of jij de verzender of ontvanger bent.
   const [label, detail] = snapLabels[status] || (own ? ["Snap verstuurd", "Wacht op openen"] : ["Open snap", "Tik om te bekijken"]);
 
   return `
@@ -259,8 +287,10 @@ function renderSnapBubble(msg) {
   `;
 }
 
-// ── Snap actions ──────────────────────────────────────────────────────────
+// ── Snap-acties ──────────────────────────────────────────────────────────────
 
+// Opent een snap: vraagt de foto op bij de backend (die de teller bijwerkt) en
+// toont hem. Bij een fout (bv. verlopen) wordt de chat herladen.
 async function openSnap(msg) {
   try {
     const data = await api(`/messages/${msg.id}/open_snap`, { method: "POST" });
@@ -273,6 +303,7 @@ async function openSnap(msg) {
   }
 }
 
+// Toont de geopende snap in een pop-up, met (indien toegestaan) een bewaar-knop.
 function showSnapViewer(msg, snapData) {
   import("./modals.js").then(({ createModal, openModal }) => {
     const canSave = !msg.snap_saved && msg.receiver_id === state.user.id;
@@ -291,6 +322,7 @@ function showSnapViewer(msg, snapData) {
   });
 }
 
+// Bewaart een snap permanent in de chat.
 async function saveSnapInChat(msgId, modal) {
   try {
     const data = await api(`/messages/${msgId}/save_snap`, { method: "POST" });
@@ -303,8 +335,9 @@ async function saveSnapInChat(msgId, modal) {
   }
 }
 
-// ── Message state helpers ─────────────────────────────────────────────────
+// ── Berichten in 'state' bijhouden ──────────────────────────────────────────
 
+// Werkt één bericht bij in de lijst (of voegt het toe als het nieuw is).
 export function updateMessageInState(msg) {
   if (!msg) return;
   const idx = state.messages.findIndex((m) => m.id === msg.id);
@@ -312,12 +345,14 @@ export function updateMessageInState(msg) {
   else state.messages.push(msg);
 }
 
+// Voegt een bericht toe/werkt het bij én hertekent meteen.
 export function addOrUpdateMessage(msg) {
   if (!msg) return;
   updateMessageInState(msg);
   renderMessages();
 }
 
+// Herlaadt alle berichten van de open chat vanaf de server.
 export async function reloadMessages() {
   if (!state.selectedFriend && !state.selectedGroup) return;
   try {
@@ -329,29 +364,32 @@ export async function reloadMessages() {
   } catch {}
 }
 
-// ── Send text ─────────────────────────────────────────────────────────────
+// ── Tekst versturen ─────────────────────────────────────────────────────────
 
+// Verstuurt het getypte tekstbericht (werkt voor zowel 1-op-1 als groep).
 async function sendTextMessage(e) {
-  e.preventDefault();
+  e.preventDefault();  // voorkom dat het formulier de pagina herlaadt
   const input = document.getElementById("chat-input");
   const text = input.value.trim();
   if ((!state.selectedFriend && !state.selectedGroup) || !text) return;
 
-  input.value = "";
-  emitStopTyping();
+  input.value = "";       // veld leegmaken
+  emitStopTyping();       // 'typt...' uitzetten
 
   try {
+    // Kies het juiste eindpunt: groep of 1-op-1.
     const data = state.selectedGroup
       ? await api(`/groups/${state.selectedGroup.id}/messages/send`, { method: "POST", body: JSON.stringify({ text }) })
       : await api("/messages/send", { method: "POST", body: JSON.stringify({ receiver_id: state.selectedFriend.id, text }) });
     addOrUpdateMessage(data.message);
     await (state.selectedGroup ? loadGroups() : loadFriends());
   } catch (err) {
-    input.value = text;
+    input.value = text;   // bij een fout: zet de tekst terug
     toast(err.message, "error");
   }
 }
 
+// Verwijdert een bericht (en haalt het uit de lijst).
 async function deleteMessage(msgId) {
   try {
     const endpoint = state.selectedGroup ? `/groups/messages/${msgId}` : `/messages/${msgId}`;
@@ -364,8 +402,10 @@ async function deleteMessage(msgId) {
   }
 }
 
-// ── Typing ────────────────────────────────────────────────────────────────
+// ── Typen ('X typt...') ──────────────────────────────────────────────────────
 
+// Stuurt een 'typt'-signaal naar de andere kant, en plant een 'stop' na 1,2s
+// stilte. Zo verschijnt 'typt...' alleen zolang je echt typt.
 function handleTyping() {
   if (!state.socket || (!state.selectedFriend && !state.selectedGroup)) return;
   if (state.selectedGroup) state.socket.emit("group_typing", { group_id: state.selectedGroup.id });
@@ -374,14 +414,16 @@ function handleTyping() {
   state.typingTimer = setTimeout(emitStopTyping, 1200);
 }
 
+// Stuurt het 'stop met typen'-signaal.
 function emitStopTyping() {
   if (!state.socket) return;
   if (state.selectedGroup) state.socket.emit("group_stop_typing", { group_id: state.selectedGroup.id });
   else if (state.selectedFriend) state.socket.emit("stop_typing", { friend_id: state.selectedFriend.id });
 }
 
-// ── Voice recording ───────────────────────────────────────────────────────
+// ── Spraakberichten opnemen ──────────────────────────────────────────────────
 
+// Start of stopt de opname (de microfoon-knop wisselt tussen die twee).
 async function toggleVoiceRecording() {
   if (state.mediaRecorder?.state === "recording") { stopVoiceRecording(); return; }
   if (!state.selectedFriend && !state.selectedGroup) return;
@@ -389,6 +431,7 @@ async function toggleVoiceRecording() {
 
   const btn = document.getElementById("voice-btn");
   try {
+    // Vraag toegang tot de microfoon en start een MediaRecorder.
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const mimeType = getSupportedAudioMimeType();
 
@@ -399,14 +442,16 @@ async function toggleVoiceRecording() {
     state.recordingStartedAt = Date.now();
     state.mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
 
+    // Verzamel de audio-stukjes terwijl je opneemt.
     state.mediaRecorder.addEventListener("dataavailable", (e) => {
       if (e.data.size > 0) state.voiceChunks.push(e.data);
     });
 
+    // Wanneer de opname stopt: microfoon afsluiten en het bericht versturen.
     state.mediaRecorder.addEventListener("stop", async () => {
       clearTimeout(state.voiceTimer);
       state.voiceTimer = null;
-      stream.getTracks().forEach((t) => t.stop());
+      stream.getTracks().forEach((t) => t.stop());  // microfoon vrijgeven
       state.voiceStream = null;
       const b = document.getElementById("voice-btn");
       if (b) { b.classList.remove("recording"); b.textContent = "Mic"; }
@@ -418,6 +463,7 @@ async function toggleVoiceRecording() {
 
     state.mediaRecorder.start();
     if (btn) { btn.classList.add("recording"); btn.textContent = "Stop"; }
+    // Veiligheid: stop automatisch na 60 seconden.
     state.voiceTimer = setTimeout(() => {
       if (state.mediaRecorder?.state === "recording") {
         toast("Opname automatisch gestopt na 60 seconden.", "info");
@@ -431,10 +477,12 @@ async function toggleVoiceRecording() {
   }
 }
 
+// Stopt de lopende opname (de 'stop'-handler hierboven doet de rest).
 export function stopVoiceRecording() {
   if (state.mediaRecorder?.state === "recording") state.mediaRecorder.stop();
 }
 
+// Ruimt alles van een opname op (microfoon uit, knop terugzetten, timers wissen).
 export function cleanupVoiceRecording() {
   clearTimeout(state.voiceTimer);
   state.voiceTimer = null;
@@ -446,12 +494,15 @@ export function cleanupVoiceRecording() {
   state.recordingGroupId = null;
 }
 
+// Zet de opgenomen audio om en verstuurt ze als bericht.
 async function sendVoiceMessage(receiverId, groupId = null) {
   if ((!receiverId && !groupId) || !state.voiceChunks.length) return;
 
+  // Plak de stukjes samen tot één audiobestand (blob).
   const blob = new Blob(state.voiceChunks, {
     type: state.mediaRecorder?.mimeType || state.voiceChunks[0].type || "audio/webm",
   });
+  // Bereken de duur en zet de audio om naar tekst (data-URL) voor verzending.
   const duration = Math.max(1, Math.round((Date.now() - state.recordingStartedAt) / 1000));
   const voiceData = await blobToDataUrl(blob);
 
@@ -460,6 +511,7 @@ async function sendVoiceMessage(receiverId, groupId = null) {
       ? await api(`/groups/${groupId}/messages/send`, { method: "POST", body: JSON.stringify({ is_voice: true, voice_data: voiceData, voice_duration: duration }) })
       : await api("/messages/send", { method: "POST", body: JSON.stringify({ receiver_id: receiverId, is_voice: true, voice_data: voiceData, voice_duration: duration }) });
 
+    // Toon het bericht alleen als die chat nog steeds openstaat.
     const inCurrentChat = groupId
       ? state.selectedGroup && Number(groupId) === state.selectedGroup.id
       : state.selectedFriend && Number(receiverId) === state.selectedFriend.id;
@@ -471,12 +523,13 @@ async function sendVoiceMessage(receiverId, groupId = null) {
   } catch (err) {
     toast(err.message, "error");
   } finally {
-    state.voiceChunks = [];
+    state.voiceChunks = [];  // opruimen
   }
 }
 
-// ── Block ─────────────────────────────────────────────────────────────────
+// ── Blokkeren ────────────────────────────────────────────────────────────────
 
+// Blokkeert de vriend van de open chat (na een bevestiging).
 async function blockSelectedFriend() {
   if (!state.selectedFriend) return;
   if (!window.confirm(`Wil je ${state.selectedFriend.username} blokkeren?`)) return;

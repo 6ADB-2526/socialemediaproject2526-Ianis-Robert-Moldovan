@@ -1,12 +1,9 @@
 /** @format */
 
-/**
- * main.js — Application bootstrap.
- *
- * This replaces the old monolithic snap.js.  It imports focused modules and
- * wires everything together.  The <script type="module"> tag in snap.html
- * points here.
- */
+// =============================================================================
+// main.js — HET STARTPUNT van de frontend-app (geladen door snap.html).
+// Brengt alle losse modules samen en zet bij het opstarten alles op.
+// =============================================================================
 
 import { state } from "./state.js";
 import { api, toast } from "../utils/api.js";
@@ -21,8 +18,7 @@ import { cleanupCall } from "./calls.js";
 import { showAddFriendModal, showCreateGroupModal } from "./modals.js";
 import { showCamera } from "./camera.js";
 
-// ── DOM element references ────────────────────────────────────────────────
-
+// ── Verwijzingen naar vaste HTML-elementen (knoppen, modals) ───────────────
 const els = {
   body: document.body,
   profileBtn: document.getElementById("profile-icon"),
@@ -43,39 +39,45 @@ const els = {
   logoutBtn: document.getElementById("logout-btn"),
 };
 
-// ── Init ──────────────────────────────────────────────────────────────────
+// ── Init: dit draait zodra de app laadt ────────────────────────────────────
 
 async function init() {
   try {
-    // Load server config (ICE servers etc.)
+    // 1) Serverconfig ophalen (ICE-servers e.d.). Faalt het, dan niet erg.
     try {
       state.config = await api("/config");
     } catch {}
 
-    // Load current user; redirect to auth if not logged in
+    // 2) Ingelogde gebruiker ophalen. Lukt dit niet -> je bent niet ingelogd
+    //    en we springen naar de catch (redirect naar de loginpagina).
     const data = await api("/me");
     state.user = data.user;
     els.profileBtn.textContent = initials(state.user.username);
     if (state.user.avatar) {
       els.profileBtn.style.backgroundImage = `url("${state.user.avatar}")`;
     }
-    applyTheme();
+    applyTheme();   // dark mode / themakleur toepassen
 
+    // 3) Alles opzetten: socket, profiel, knoppen, zoekbalk, beginscherm.
     setupSocket();
     setupProfile(els);
     setupGlobalButtons();
     setupSidebarSearch();
     renderHome();
 
+    // 4) Sociale data laden (vrienden, groepen, verzoeken, stories).
     await refreshSocialData();
 
+    // 5) Elke 20s de '2 min geleden'-labels verversen.
     state.relativeTimer = setInterval(updateRelativeLabels, 20000);
     updateRelativeLabels();
   } catch {
+    // Niet ingelogd of fout -> terug naar de loginpagina.
     window.location.href = "../auth.html";
   }
 }
 
+// Koppelt de knoppen in de zijbalk-header aan hun functie.
 function setupGlobalButtons() {
   els.addFriendBtn.addEventListener("click", showAddFriendModal);
   els.groupChatBtn.addEventListener("click", showCreateGroupModal);
@@ -86,7 +88,8 @@ function setupGlobalButtons() {
   });
 }
 
-// ── Cleanup on unload ─────────────────────────────────────────────────────
+// ── Opruimen wanneer de pagina sluit ───────────────────────────────────────
+// Stop lopende opnames/streams/timers netjes (anders blijft bv. de microfoon aan).
 
 window.addEventListener("beforeunload", () => {
   cleanupVoiceRecording();
@@ -95,4 +98,4 @@ window.addEventListener("beforeunload", () => {
   clearInterval(state.relativeTimer);
 });
 
-init();
+init();  // start de app
