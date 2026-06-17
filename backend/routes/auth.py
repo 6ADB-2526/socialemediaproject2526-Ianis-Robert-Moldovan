@@ -8,6 +8,7 @@ from flask import Blueprint, request, jsonify, session
 from extensions import db, bcrypt
 from models.user import User
 from utils.auth import require_auth
+import re
 
 # Een blueprint groepeert deze routes. url_prefix zorgt dat alles onder /api komt.
 auth_bp = Blueprint("auth", __name__, url_prefix="/api")
@@ -26,8 +27,10 @@ def register():
         return jsonify({"error": "Alle velden zijn verplicht"}), 400
     if len(username) < 3:
         return jsonify({"error": "Gebruikersnaam moet minimaal 3 tekens zijn"}), 400
-    if len(password) < 6:
-        return jsonify({"error": "Wachtwoord moet minimaal 6 tekens zijn"}), 400
+    if len(password) < 8:
+        return jsonify({"error": "Wachtwoord moet minimaal 8 tekens zijn"}), 400
+    if not re.search(r"[^A-Za-z0-9]", password):
+        return jsonify({"error": "Wachtwoord moet minimaal 1 speciaal teken bevatten"}), 400
     if User.query.filter_by(username=username).first():
         return jsonify({"error": "Gebruikersnaam is al in gebruik"}), 409
     if User.query.filter_by(email=email).first():
