@@ -40,6 +40,10 @@ def get_messages(friend_id):
         | ((Message.sender_id == friend_id) & (Message.receiver_id == user_id))
     ).order_by(Message.created_at.asc()).all()
 
+    # Gewiste berichten van de ander niet tonen; je eigen gewiste berichten wél
+    # (zodat je ze kan terugplaatsen).
+    messages = [m for m in messages if not m.is_deleted or m.sender_id == user_id]
+
     # Markeer de ongelezen berichten van de vriend als gelezen.
     Message.query.filter_by(
         sender_id=friend_id, receiver_id=user_id, is_read=False
@@ -169,7 +173,9 @@ def save_snap(message_id):
 
 @messages_bp.route("/messages/<int:message_id>", methods=["DELETE"])
 def delete_message(message_id):
-    """Verwijdert een bericht. Mag alleen de VERZENDER van dat bericht doen."""
+    """Wist een bericht (soft delete). Mag alleen de VERZENDER doen.
+    Het bericht wordt niet écht verwijderd: de auteur kan het terugplaatsen,
+    maar de andere gebruiker ziet het niet meer."""
     user_id, error, code = require_auth()
     if error:
         return error, code
@@ -178,6 +184,31 @@ def delete_message(message_id):
     if not msg or msg.sender_id != user_id:
         return jsonify({"error": "Bericht niet gevonden of geen toegang"}), 404
 
-    db.session.delete(msg)
+    msg.is_deleted = True
     db.session.commit()
-    return jsonify({"message": "Verwijderd"}), 200
+
+    # De andere kant moet het bericht zien verdwijnen.
+    other_id = msg.receiver_id
+    notify_users("message_deleted", {"id": msg.id}, other_id)
+
+    return jsonify({"message": "Gewist", "data": msg.to_dict(viewer_id=user_id)}), 200
+
+
+@messages_bp.route("/messages/<int:message_id>/restore", methods=["POST"])
+def restore_message(message_id):
+    """Plaatst een gewist bericht terug. Mag alleen de VERZENDER doen."""
+    user_id, error, code = require_auth()
+    if error:
+        return error, code
+
+    msg = db.session.get(Message, message_id)
+    if not msg or msg.sender_id != user_id:
+        return jsonify({"error": "Bericht niet gevonden of geen toegang"}), 404
+
+    msg.is_deleted = False
+    db.session.commit()
+
+    # De andere kant ziet het bericht opnieuw verschijnen.
+    notify_users("new_message", msg.to_dict(viewer_id=msg.receiver_id), msg.receiver_id)
+
+    return jsonify({"message": "Teruggeplaatst", "data": msg.to_dict(viewer_id=user_id)}), 200

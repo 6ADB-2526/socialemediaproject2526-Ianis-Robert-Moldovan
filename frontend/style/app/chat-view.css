@@ -792,3 +792,14 @@
     max-width: 90%;
   }
 }
+
+.deleted-bubble {
+  opacity: 0.6;
+  font-style: italic;
+}
+.restore-msg {
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-size: 1rem;
+}

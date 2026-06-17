@@ -23,6 +23,7 @@ class Message(db.Model):
     voice_data = db.Column(db.Text, nullable=True)        # audio als data-URL
     voice_duration = db.Column(db.Integer, nullable=True) # duur in seconden
     is_read = db.Column(db.Boolean, default=False)        # gelezen? (voor ongelezen-teller)
+    is_deleted = db.Column(db.Boolean, default=False)    # gewist door auteur (soft delete)
     created_at = db.Column(db.DateTime, default=utc_now)
 
     def to_dict(self, viewer_id: int | None = None, include_snap_data: bool = False) -> dict:
@@ -76,5 +77,6 @@ class Message(db.Model):
             "voice_data": self.voice_data,
             "voice_duration": self.voice_duration,
             "is_read": self.is_read,
+            "is_deleted": self.is_deleted,
             "created_at": iso_utc(self.created_at),
         }
